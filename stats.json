@@ -1,0 +1,89 @@
+[
+  {
+    "hand_number": 1,
+    "winner": "bot",
+    "ended_by": "showdown",
+    "pot": 0,
+    "player_hole": [
+      "6d",
+      "Td"
+    ],
+    "board": [
+      "8d",
+      "5s",
+      "Qs",
+      "Jd",
+      "2s"
+    ],
+    "player_hand_name": "High Card  (score: 7015)",
+    "bot_hand_name": "High Card  (score: 6686)",
+    "player_chips_after": 910,
+    "bot_chips_after": 1090,
+    "timestamp": "2026-03-09 15:54:15"
+  },
+  {
+    "hand_number": 2,
+    "winner": "bot",
+    "ended_by": "fold",
+    "pot": 0,
+    "player_hole": [
+      "7d",
+      "Js"
+    ],
+    "board": [
+      "9s",
+      "5c",
+      "7h",
+      "Th",
+      "8c"
+    ],
+    "player_hand_name": "",
+    "bot_hand_name": "",
+    "player_chips_after": 802,
+    "bot_chips_after": 1198,
+    "timestamp": "2026-03-09 15:55:36"
+  },
+  {
+    "hand_number": 3,
+    "winner": "bot",
+    "ended_by": "showdown",
+    "pot": 0,
+    "player_hole": [
+      "8d",
+      "Tc"
+    ],
+    "board": [
+      "5c",
+      "4s",
+      "Ad",
+      "Jd",
+      "9c"
+    ],
+    "player_hand_name": "High Card  (score: 6470)",
+    "bot_hand_name": "One Pair  (score: 4013)",
+    "player_chips_after": 657,
+    "bot_chips_after": 1343,
+    "timestamp": "2026-03-09 15:56:36"
+  },
+  {
+    "hand_number": 4,
+    "winner": "player",
+    "ended_by": "fold",
+    "pot": 0,
+    "player_hole": [
+      "5c",
+      "Tc"
+    ],
+    "board": [
+      "Ad",
+      "5d",
+      "Kd",
+      "Qd"
+    ],
+    "player_hand_name": "",
+    "bot_hand_name": "",
+    "player_chips_after": 701,
+    "bot_chips_after": 1299,
+    "timestamp": "2026-03-09 15:57:22"
+  }
+]
