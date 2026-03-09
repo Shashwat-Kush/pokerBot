@@ -1,0 +1,267 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Poker Bot</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@700;900&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/static/style.css" />
+</head>
+<body>
+
+  <!-- ── Background felt texture ── -->
+  <div class="felt-bg"></div>
+
+  <div class="layout">
+
+    <!-- ════════════════════════════════
+         LEFT — STATS SIDEBAR
+    ═════════════════════════════════ -->
+    <aside class="sidebar" id="sidebar">
+
+      <div class="sidebar-header">
+        <span class="sidebar-title">SESSION</span>
+        <button class="btn-ghost" id="btn-reset-stats">Reset</button>
+      </div>
+
+      <!-- Summary cards -->
+      <div class="stat-grid">
+        <div class="stat-card">
+          <div class="stat-value" id="stat-hands">0</div>
+          <div class="stat-label">Hands</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-value accent" id="stat-winrate">—</div>
+          <div class="stat-label">Win Rate</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-value" id="stat-record">0W 0L</div>
+          <div class="stat-label">Record</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-value accent" id="stat-streak">0</div>
+          <div class="stat-label">Streak</div>
+        </div>
+      </div>
+
+      <!-- Chip graph -->
+      <div class="graph-section">
+        <div class="section-label">CHIP HISTORY</div>
+        <div class="chip-graph-wrap">
+          <canvas id="chipGraph" width="220" height="90"></canvas>
+          <div class="graph-empty" id="graph-empty">Play a hand to see graph</div>
+        </div>
+      </div>
+
+      <!-- Hand history -->
+      <div class="history-section">
+        <div class="section-label">RECENT HANDS</div>
+        <div id="hand-history">
+          <div class="history-empty">No hands yet</div>
+        </div>
+      </div>
+
+    </aside>
+
+    <!-- ════════════════════════════════
+         CENTER — POKER TABLE
+    ═════════════════════════════════ -->
+    <main class="table-wrap">
+
+      <div class="table-felt">
+
+        <!-- Header -->
+        <div class="table-header">
+          <span class="game-title">♠ HEADS-UP POKER ♥</span>
+          <div class="blinds-badge" id="blinds-badge">10 / 20</div>
+        </div>
+
+        <!-- Bot zone -->
+        <div class="player-zone bot-zone">
+          <div class="player-info">
+            <span class="player-label">BOT</span>
+            <span class="chip-count" id="bot-chips">1000</span>
+            <span class="chip-icon">⬡</span>
+          </div>
+          <div class="card-row" id="bot-cards">
+            <div class="card card-back"></div>
+            <div class="card card-back"></div>
+          </div>
+          <div class="bet-badge" id="bot-bet-badge" style="display:none">
+            <span id="bot-bet-amount">0</span>
+          </div>
+        </div>
+
+        <!-- Board -->
+        <div class="board-zone">
+          <div class="pot-display">
+            <span class="pot-label">POT</span>
+            <span class="pot-amount" id="pot-amount">0</span>
+          </div>
+          <div class="board-cards" id="board-cards">
+            <!-- community cards injected here -->
+          </div>
+          <div class="street-badge" id="street-badge">—</div>
+        </div>
+
+        <!-- Player zone -->
+        <div class="player-zone player-zone-self">
+          <div class="bet-badge" id="player-bet-badge" style="display:none">
+            <span id="player-bet-amount">0</span>
+          </div>
+          <div class="card-row" id="player-cards">
+            <div class="card card-back"></div>
+            <div class="card card-back"></div>
+          </div>
+          <div class="player-info">
+            <span class="chip-icon">⬡</span>
+            <span class="chip-count" id="player-chips">1000</span>
+            <span class="player-label">YOU</span>
+          </div>
+        </div>
+
+      </div><!-- /table-felt -->
+
+      <!-- ── Message bar ── -->
+      <div class="message-bar" id="message-bar">
+        Press "New Hand" to start playing
+      </div>
+
+      <!-- ── Action panel ── -->
+      <div class="action-panel" id="action-panel">
+
+        <button class="btn-action btn-new" id="btn-new-hand">
+          New Hand
+        </button>
+
+        <div class="betting-actions" id="betting-actions" style="display:none">
+
+          <button class="btn-action btn-fold" id="btn-fold">
+            Fold
+          </button>
+
+          <button class="btn-action btn-call" id="btn-call">
+            Call <span id="call-amount">0</span>
+          </button>
+
+          <div class="raise-group">
+            <button class="btn-action btn-raise" id="btn-raise">
+              Raise to
+            </button>
+            <input
+              type="number"
+              id="raise-input"
+              class="raise-input"
+              placeholder="amount"
+              min="0"
+              step="20"
+            />
+          </div>
+
+          <button class="btn-action btn-allin" id="btn-allin">
+            All In
+          </button>
+
+        </div>
+
+      </div><!-- /action-panel -->
+
+      <!-- ── Result overlay ── -->
+      <div class="result-overlay" id="result-overlay" style="display:none">
+        <div class="result-box">
+          <div class="result-icon" id="result-icon">🏆</div>
+          <div class="result-title" id="result-title">You Win!</div>
+          <div class="result-hands" id="result-hands"></div>
+          <button class="btn-action btn-new" id="btn-result-new">
+            Next Hand →
+          </button>
+        </div>
+      </div>
+
+      <!-- ── Game Over overlay ── -->
+      <div class="result-overlay" id="gameover-overlay" style="display:none">
+        <div class="result-box">
+          <div class="result-icon" id="gameover-icon">💀</div>
+          <div class="result-title" id="gameover-title">Game Over</div>
+          <div class="result-hands" id="gameover-subtitle">You ran out of chips</div>
+          <div class="gameover-stats" id="gameover-stats"></div>
+          <button class="btn-action btn-new" id="btn-play-again">
+            Play Again ↺
+          </button>
+        </div>
+      </div>
+
+    </main>
+
+  </div><!-- /layout -->
+
+  <!-- ════════════════════════════════
+       DEV PANEL (right slide-in)
+  ═════════════════════════════════ -->
+  <div class="dev-panel" id="dev-panel">
+
+    <div class="dev-header">
+      <span class="dev-title">🛠 Developer View</span>
+      <button class="btn-ghost" id="btn-close-dev">✕</button>
+    </div>
+
+    <!-- Bot hole cards -->
+    <div class="dev-section">
+      <div class="dev-section-label">BOT HOLE CARDS</div>
+      <div class="card-row dev-bot-cards" id="dev-bot-cards">
+        <div class="card card-back"></div>
+        <div class="card card-back"></div>
+      </div>
+    </div>
+
+    <!-- Equity meters -->
+    <div class="dev-section">
+      <div class="dev-section-label">LAST DECISION</div>
+
+      <div class="dev-stat-row">
+        <span class="dev-stat-label">Equity</span>
+        <div class="dev-bar-wrap">
+          <div class="dev-bar" id="dev-equity-bar"></div>
+        </div>
+        <span class="dev-stat-val" id="dev-equity">—</span>
+      </div>
+
+      <div class="dev-stat-row">
+        <span class="dev-stat-label">Pot Odds</span>
+        <div class="dev-bar-wrap">
+          <div class="dev-bar dev-bar-odds" id="dev-odds-bar"></div>
+        </div>
+        <span class="dev-stat-val" id="dev-odds">—</span>
+      </div>
+
+      <div class="dev-stat-row">
+        <span class="dev-stat-label">EV Edge</span>
+        <div class="dev-bar-wrap">
+          <div class="dev-bar dev-bar-ev" id="dev-ev-bar"></div>
+        </div>
+        <span class="dev-stat-val" id="dev-ev">—</span>
+      </div>
+
+      <div class="dev-decision" id="dev-decision">—</div>
+      <div class="dev-reasoning" id="dev-reasoning">—</div>
+    </div>
+
+    <!-- Action log -->
+    <div class="dev-section dev-section-log">
+      <div class="dev-section-label">ACTION LOG <span class="dev-hand-num" id="dev-hand-num"></span></div>
+      <div class="dev-log" id="dev-log">
+        <div class="dev-log-empty">Start a hand to see decisions</div>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- Dev panel toggle button (always visible) -->
+  <button class="btn-dev-toggle" id="btn-dev-toggle" title="Toggle Developer View">
+    🛠
+  </button>
+
+  <script src="/static/game.js"></script>
+</body>
+</html>

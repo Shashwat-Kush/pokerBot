@@ -20,6 +20,7 @@ API endpoints:
 import time
 from flask   import Flask, render_template, request, jsonify
 from engine  import GameEngine, GameState, Street, Action, Winner
+import bot as bot_module
 from bot     import get_action
 from stats   import StatsTracker
 
@@ -33,8 +34,9 @@ engine  = GameEngine(starting_chips=1000, big_blind=20)
 tracker = StatsTracker()
 
 # Track hand number for dealer alternation
-_hand_number = 0
-BOT_THINK_DELAY = 0.6   # seconds — keeps it feeling natural
+_hand_number  = 0
+_action_log   = []       # accumulated decision log for current hand
+BOT_THINK_DELAY = 0.6
 
 
 # ---------------------------------------------------------------------------
@@ -50,9 +52,10 @@ def _serialize_state(state: GameState, message: str = "") -> dict:
 
     return {
         # Cards
-        "player_hole" : [c.short() for c in state.player_hole],
-        "bot_hole"    : [c.short() for c in state.bot_hole] if reveal_bot else ["??", "??"],
-        "board"       : [c.short() for c in state.board],
+        "player_hole"     : [c.short() for c in state.player_hole],
+        "bot_hole"        : [c.short() for c in state.bot_hole] if reveal_bot else ["??", "??"],
+        "bot_hole_actual" : [c.short() for c in state.bot_hole],   # always for dev panel
+        "board"           : [c.short() for c in state.board],
 
         # Money
         "pot"          : state.pot,
@@ -77,6 +80,10 @@ def _serialize_state(state: GameState, message: str = "") -> dict:
 
         # UI message
         "message"      : message,
+
+        # Developer panel
+        "debug"        : bot_module.last_debug,
+        "action_log"   : list(_action_log),
     }
 
 
@@ -104,15 +111,27 @@ def _action_message(who: str, action: Action, amount: int, prev_state: GameState
 def _play_bot_turns(state: GameState) -> tuple[GameState, str]:
     """
     Keep playing bot turns until it's the player's turn or hand ends.
-    Returns (final_state, last_message).
+    Appends each decision to _action_log.
+    Guard: max 6 bot actions per call to prevent infinite loops.
     """
-    message = ""
-    while engine.hand_active and not state.player_turn:
+    global _action_log
+    message  = ""
+    max_turns = 6   # safety cap — never more than 6 consecutive bot actions
+
+    while engine.hand_active and not state.player_turn and max_turns > 0:
+        max_turns -= 1
         time.sleep(BOT_THINK_DELAY)
         action, amount = get_action(state)
-        prev_state     = state
-        state          = engine.apply_action(action, amount)
-        message        = _action_message("bot", action, amount, prev_state)
+        # Snapshot debug info immediately after decision
+        if bot_module.last_debug:
+            entry = dict(bot_module.last_debug)
+            entry["street"] = state.street.name
+            _action_log.append(entry)
+            _action_log[:] = _action_log[-8:]   # keep last 8 only
+        prev_state = state
+        state      = engine.apply_action(action, amount)
+        message    = _action_message("bot", action, amount, prev_state)
+
     return state, message
 
 
@@ -128,13 +147,10 @@ def index():
 
 @app.route("/new_hand", methods=["POST"])
 def new_hand():
-    """
-    Start a new hand.
-    Alternates dealer each hand.
-    If bot acts first (is dealer in heads-up = SB), auto-plays bot turn.
-    """
-    global _hand_number
+    global _hand_number, _action_log
     _hand_number += 1
+    _action_log   = []   # reset log for new hand
+    bot_module.last_debug = {}
 
     player_is_dealer = (_hand_number % 2 == 1)
     state = engine.start_hand(player_is_dealer=player_is_dealer)
@@ -223,6 +239,74 @@ def stats():
 @app.route("/reset_stats", methods=["POST"])
 def reset_stats():
     """Wipe all stats history."""
+    tracker.reset()
+    return jsonify({"status": "ok"})
+
+
+@app.route("/debug/equity", methods=["POST"])
+def debug_equity():
+    """
+    Dev panel live equity endpoint.
+    Runs Monte Carlo on the bot's current hand and returns stats.
+    Called on every player turn so the dev panel stays live.
+    """
+    from monte_carlo import estimate_equity, pot_odds as calc_pot_odds
+    from deck import Card
+
+    data      = request.get_json()
+    bot_cards = data.get('bot_cards', [])
+    board     = data.get('board', [])
+    pot       = int(data.get('pot', 0))
+    cur_bet   = int(data.get('current_bet', 0))
+    bot_bet   = int(data.get('bot_bet', 0))
+
+    def parse_card(s):
+        if s in ('??', ''): return None
+        suit_map = {'♠':'s','♥':'h','♦':'d','♣':'c'}
+        suit = suit_map.get(s[-1], 's')
+        rank = s[:-1]
+        return Card(rank, suit)
+
+    hole        = [c for c in (parse_card(s) for s in bot_cards)  if c]
+    board_cards = [c for c in (parse_card(s) for s in board)      if c]
+
+    if len(hole) < 2:
+        return jsonify({'error': 'not enough cards'}), 400
+
+    equity  = estimate_equity(hole, board_cards, simulations=500)
+    to_call = max(cur_bet - bot_bet, 0)
+    p_odds  = calc_pot_odds(to_call, pot) if pot > 0 else 0.0
+    ev      = round((equity - p_odds) * 100, 1)
+    eq_pct  = round(equity * 100, 1)
+    od_pct  = round(p_odds * 100, 1)
+
+    if equity >= 0.65:
+        decision  = 'RAISE STRONG'
+        reasoning = f'Equity {eq_pct}% ≥ 65% threshold → would raise big.'
+    elif equity >= 0.52:
+        decision  = 'RAISE MEDIUM'
+        reasoning = f'Equity {eq_pct}% ≥ 52% → would raise medium.'
+    elif equity > p_odds:
+        decision  = 'CALL (+EV)'
+        reasoning = f'Equity {eq_pct}% > pot odds {od_pct}% → would call.'
+    else:
+        decision  = 'FOLD'
+        reasoning = f'Equity {eq_pct}% < pot odds {od_pct}% → would fold.'
+
+    return jsonify({
+        'equity'   : eq_pct,
+        'pot_odds' : od_pct,
+        'ev'       : ev,
+        'decision' : decision,
+        'reasoning': reasoning,
+    })
+
+
+@app.route("/reset_game", methods=["POST"])
+def reset_game():
+    """Reset both chip stacks to starting amount for a fresh game."""
+    engine.player_chips = 1000
+    engine.bot_chips    = 1000
     tracker.reset()
     return jsonify({"status": "ok"})
 

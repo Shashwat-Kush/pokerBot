@@ -74,6 +74,7 @@ class GameState:
     winner       : Winner | None = None
     player_hand_name : str   = ""
     bot_hand_name    : str   = ""
+    raises_this_street : int = 0
 
     def to_act(self) -> str:
         return "player" if self.player_turn else "bot"
@@ -130,6 +131,7 @@ class GameEngine:
         # Track whether both players have acted on this street
         # (needed to detect when a street is complete)
         self._actions_this_street = 0
+        self._raises_this_street  = 0   # cap raises to prevent infinite loops
         self._last_aggressor : str | None = None   # 'player' or 'bot'
 
         self._winner : Winner | None = None
@@ -206,12 +208,21 @@ class GameEngine:
         """
         Return the list of legal actions for the currently acting player.
         CHECK is only legal when the acting player's bet matches current_bet.
+        RAISE is blocked after 4 raises per street or when acting player is all-in.
         """
-        acting_bet = self._player_bet if self._player_turn else self._bot_bet
-        actions = [Action.FOLD, Action.CALL, Action.RAISE]
+        acting_bet   = self._player_bet if self._player_turn else self._bot_bet
+        acting_chips = self.player_chips if self._player_turn else self.bot_chips
+        actions      = [Action.FOLD, Action.CALL, Action.RAISE]
+
         if acting_bet == self._current_bet:
             actions.append(Action.CHECK)
-            actions.remove(Action.CALL)   # can't call when you can check
+            actions.remove(Action.CALL)
+
+        # Block raise if cap reached or player has no chips to raise
+        if self._raises_this_street >= 4 or acting_chips == 0:
+            if Action.RAISE in actions:
+                actions.remove(Action.RAISE)
+
         return actions
 
     @property
@@ -240,7 +251,7 @@ class GameEngine:
     def _handle_call(self, acting: str) -> None:
         amount = self._current_bet - self._get_bet(acting)
         chips  = self._get_chips(acting)
-        amount = min(amount, chips)   # handle all-in (simplified)
+        amount = min(amount, chips)   # handle all-in
 
         self._deduct_chips(acting, amount)
         self._add_to_bet(acting, amount)
@@ -248,12 +259,14 @@ class GameEngine:
         self._actions_this_street += 1
         self._switch_turn()
 
+        # If either player is now all-in, run out remaining streets
+        if self.player_chips == 0 or self.bot_chips == 0:
+            self._run_out_board()
+
     def _handle_raise(self, acting: str, raise_amount: int) -> None:
         """
         raise_amount = the TOTAL chips the acting player wants to have
         committed this street after the raise.
-        e.g. if current_bet=40 and player already put in 20, a raise to 80
-        means raise_amount=80 and they put in 60 more chips.
         """
         already_in   = self._get_bet(acting)
         extra_needed = raise_amount - already_in
@@ -264,11 +277,16 @@ class GameEngine:
         self._add_to_bet(acting, extra_needed)
         self._pot += extra_needed
 
-        self._min_raise    = raise_amount - self._current_bet
-        self._current_bet  = raise_amount
-        self._last_aggressor = acting
+        self._min_raise           = raise_amount - self._current_bet
+        self._current_bet         = raise_amount
+        self._last_aggressor      = acting
+        self._raises_this_street += 1
         self._actions_this_street += 1
         self._switch_turn()
+
+        # If either player is now all-in, force street end
+        if self.player_chips == 0 or self.bot_chips == 0:
+            self._advance_street()
 
     # -----------------------------------------------------------------------
     # Street management
@@ -313,6 +331,28 @@ class GameEngine:
             self._player_turn = False   # bot (BB) acts first post-flop
         else:
             self._player_turn = True    # player (BB) acts first post-flop
+
+    def _run_out_board(self) -> None:
+        """
+        When a player is all-in, deal remaining community cards and
+        go straight to showdown — no more betting.
+        """
+        while self._street not in (Street.SHOWDOWN, Street.HAND_OVER):
+            if self._street == Street.PREFLOP:
+                self.deck.deal(1)
+                self._board += self.deck.deal(3)
+                self._street = Street.FLOP
+            elif self._street == Street.FLOP:
+                self.deck.deal(1)
+                self._board += self.deck.deal(1)
+                self._street = Street.TURN
+            elif self._street == Street.TURN:
+                self.deck.deal(1)
+                self._board += self.deck.deal(1)
+                self._street = Street.RIVER
+            elif self._street == Street.RIVER:
+                self._resolve_showdown()
+                return
 
     def _resolve_showdown(self) -> None:
         """Evaluate hands, award the pot, and set winner info."""
@@ -360,6 +400,7 @@ class GameEngine:
         self._current_bet         = 0
         self._min_raise           = self.big_blind
         self._actions_this_street = 0
+        self._raises_this_street  = 0
         self._last_aggressor      = None
 
     def _post_blind(self, who: str, amount: int) -> None:
@@ -391,22 +432,23 @@ class GameEngine:
 
     def _snapshot(self) -> GameState:
         return GameState(
-            player_hole      = list(self._player_hole),
-            bot_hole         = list(self._bot_hole),
-            board            = list(self._board),
-            pot              = self._pot,
-            player_chips     = self.player_chips,
-            bot_chips        = self.bot_chips,
-            player_bet       = self._player_bet,
-            bot_bet          = self._bot_bet,
-            big_blind        = self.big_blind,
-            street           = self._street,
-            player_turn      = self._player_turn,
-            current_bet      = self._current_bet,
-            min_raise        = self._min_raise,
-            winner           = self._winner,
-            player_hand_name = self._player_hand_name,
-            bot_hand_name    = self._bot_hand_name,
+            player_hole        = list(self._player_hole),
+            bot_hole           = list(self._bot_hole),
+            board              = list(self._board),
+            pot                = self._pot,
+            player_chips       = self.player_chips,
+            bot_chips          = self.bot_chips,
+            player_bet         = self._player_bet,
+            bot_bet            = self._bot_bet,
+            big_blind          = self.big_blind,
+            street             = self._street,
+            player_turn        = self._player_turn,
+            current_bet        = self._current_bet,
+            min_raise          = self._min_raise,
+            winner             = self._winner,
+            player_hand_name   = self._player_hand_name,
+            bot_hand_name      = self._bot_hand_name,
+            raises_this_street = self._raises_this_street,
         )
 
 
