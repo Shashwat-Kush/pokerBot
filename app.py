@@ -310,11 +310,13 @@ def reset_game():
     tracker.reset()
     return jsonify({"status": "ok"})
 
-
 # ---------------------------------------------------------------------------
 if __name__ == "__main__":
+    import os
+    port = int(os.environ.get("PORT", 5000))
+    debug = os.environ.get("FLASK_ENV") != "production"
     print("╔══════════════════════════════════╗")
     print("║   Poker Bot — Web UI             ║")
-    print("║   http://localhost:5000          ║")
+    print(f"║   http://localhost:{port}          ║")
     print("╚══════════════════════════════════╝")
-    app.run(debug=True, port=5000)
+    app.run(host="0.0.0.0", debug=debug, port=port)
